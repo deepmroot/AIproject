@@ -4,3 +4,10 @@ __pycache__/
 *.pyd
 *.swp
 outputs/
+.subject_cache/
+test_inputs/
+test_outputs/
+output_audio.wav
+output_video.mp4
+NUL
+*.bat
