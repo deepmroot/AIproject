@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Entropy Engine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+
+  .slide {
+    display: none;
+    width: 100vw; height: 100vh;
+    position: relative;
+    overflow: hidden;
+  }
+  .slide.active { display: flex; }
+
+  /* Navigation */
+  #nav {
+    position: fixed; bottom: 24px; right: 32px; z-index: 999;
+    display: flex; gap: 12px; align-items: center;
+  }
+  #nav button {
+    background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.3);
+    padding: 10px 22px; border-radius: 6px; font-size: 15px; cursor: pointer;
+    transition: background 0.2s;
+  }
+  #nav button:hover { background: rgba(255,255,255,0.25); }
+  #slide-counter { color: rgba(255,255,255,0.4); font-size: 13px; }
+
+  /* ===== SLIDE 1: TITLE ===== */
+  #s1 {
+    background: #000;
+    justify-content: center; align-items: center; flex-direction: column;
+  }
+  #s1 video.bg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: cover; opacity: 0.45; z-index: 0;
+  }
+  #s1 .content { position: relative; z-index: 1; text-align: center; }
+  #s1 h1 {
+    font-size: 3.8rem; font-weight: 800; color: #fff;
+    text-shadow: 0 0 40px rgba(100,200,255,0.6);
+    letter-spacing: 2px; line-height: 1.15;
+  }
+  #s1 h1 span { color: #4fc3f7; }
+  #s1 .sub { margin-top: 24px; color: rgba(255,255,255,0.6); font-size: 1.2rem; }
+  #s1 .sub strong { color: #66bb6a; }
+
+  /* ===== SLIDE 2: THE IDEA ===== */
+  #s2 {
+    background: linear-gradient(135deg, #0a0a1a 0%, #0d1a2a 100%);
+    flex-direction: column; justify-content: center; align-items: center; gap: 40px;
+  }
+  #s2 .big-prompt {
+    font-size: 2rem; color: #4fc3f7; font-style: italic;
+    text-align: center; max-width: 700px;
+    border-left: 4px solid #4fc3f7; padding-left: 24px;
+  }
+  #s2 .arrow-row {
+    display: flex; align-items: center; gap: 0; flex-wrap: wrap; justify-content: center;
+  }
+  .pill {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+    color: white; padding: 14px 28px; border-radius: 50px; font-size: 1.1rem;
+    font-weight: 600; white-space: nowrap;
+  }
+  .arr { color: rgba(255,255,255,0.4); font-size: 2rem; padding: 0 8px; }
+  .pill.out { background: rgba(79,195,247,0.15); border-color: #4fc3f7; color: #4fc3f7; }
+  #s2 h2 { color: white; font-size: 1.6rem; opacity: 0.7; margin-bottom: -20px; }
+
+  /* ===== SLIDE 3: PIPELINE ===== */
+  #s3 {
+    background: #0a0a1a;
+    flex-direction: column; justify-content: center; align-items: center; gap: 30px;
+  }
+  #s3 h2 { color: white; font-size: 1.8rem; opacity: 0.8; }
+  #s3 img { max-width: 92%; max-height: 55vh; border-radius: 12px; }
+  #s3 .note {
+    color: rgba(255,255,255,0.5); font-size: 1rem; max-width: 700px; text-align: center;
+  }
+
+  /* ===== SLIDE 4: SEMANTIC ===== */
+  #s4 {
+    background: #0a0a1a;
+    flex-direction: column; justify-content: center; align-items: center; gap: 28px;
+  }
+  #s4 h2 { color: white; font-size: 1.8rem; }
+  #s4 img { max-width: 90%; max-height: 58vh; border-radius: 12px; }
+  #s4 .caption { color: rgba(255,255,255,0.5); font-size: 0.95rem; text-align: center; }
+
+  /* ===== SLIDE 5: SCENE GRID ===== */
+  #s5 {
+    background: #050508;
+    flex-direction: column; justify-content: center; align-items: center; gap: 20px;
+  }
+  #s5 h2 { color: white; font-size: 1.8rem; }
+  .scene-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    width: 92vw; max-width: 1100px;
+  }
+  .scene-card {
+    position: relative; border-radius: 10px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.12);
+    aspect-ratio: 4/3;
+  }
+  .scene-card video {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .scene-card .label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.65); color: white;
+    padding: 6px 10px; font-size: 0.85rem; font-style: italic;
+  }
+
+  /* ===== SLIDE 6: LIVE DEMO ===== */
+  #s6 {
+    background: radial-gradient(ellipse at center, #0d1a0d 0%, #000 100%);
+    flex-direction: column; justify-content: center; align-items: center; gap: 36px;
+  }
+  #s6 .demo-title { color: #66bb6a; font-size: 3rem; font-weight: 800; letter-spacing: 4px; }
+  #s6 .demo-prompts { display: flex; flex-direction: column; gap: 16px; width: 600px; }
+  .demo-prompt {
+    background: rgba(255,255,255,0.06); border-left: 3px solid #66bb6a;
+    padding: 14px 20px; border-radius: 0 8px 8px 0;
+    color: white; font-size: 1.1rem;
+  }
+  .demo-prompt .num { color: #66bb6a; font-weight: 700; margin-right: 10px; }
+  #s6 .cmd {
+    background: #111; border: 1px solid #333; border-radius: 8px;
+    padding: 16px 28px; color: #4fc3f7; font-family: monospace; font-size: 1rem;
+  }
+
+  /* ===== SLIDE 7: RESULTS ===== */
+  #s7 {
+    background: #050508;
+    flex-direction: column; justify-content: center; align-items: center; gap: 20px;
+  }
+  #s7 h2 { color: white; font-size: 1.8rem; }
+  .results-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
+    width: 90vw; max-width: 1000px;
+  }
+  .result-card { border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); }
+  .result-card video { width: 100%; display: block; }
+  .result-card .rlabel {
+    background: #111; color: rgba(255,255,255,0.7);
+    padding: 8px 14px; font-size: 0.9rem; font-style: italic;
+  }
+
+  /* ===== SLIDE 8: NEXT ===== */
+  #s8 {
+    background: linear-gradient(135deg, #0a0a1a, #1a0a0a);
+    flex-direction: column; justify-content: center; align-items: center; gap: 40px;
+  }
+  #s8 h2 { color: white; font-size: 2rem; }
+  .next-grid { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+  .next-card {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px; padding: 28px 32px; max-width: 260px; text-align: center;
+  }
+  .next-card .icon { font-size: 2.4rem; margin-bottom: 12px; }
+  .next-card h3 { color: white; font-size: 1.1rem; margin-bottom: 8px; }
+  .next-card p { color: rgba(255,255,255,0.5); font-size: 0.9rem; line-height: 1.5; }
+  #s8 .thanks { color: rgba(255,255,255,0.35); font-size: 0.95rem; margin-top: 10px; }
+  #s8 .thanks strong { color: rgba(255,255,255,0.6); }
+</style>
+</head>
+<body>
+
+<!-- ============ SLIDE 1: TITLE ============ -->
+<div class="slide active" id="s1">
+  <video class="bg" autoplay muted loop playsinline>
+    <source src="outputs/audiovisual/demo_ocean_sunset.mp4" type="video/mp4">
+  </video>
+  <div class="content">
+    <h1>Cosmic <span>Entropy</span> Engine</h1>
+    <h1 style="font-size:1.9rem; font-weight:400; color:rgba(255,255,255,0.7); margin-top:10px;">
+      Evolutionary Audiovisual Generation
+    </h1>
+    <div class="sub">
+      Mandeep Singh &nbsp;·&nbsp; T00715283<br>
+      <strong>Supervisor: Dr. Joseph Alexander Brown</strong><br>
+      Thompson Rivers University
+    </div>
+  </div>
+</div>
+
+<!-- ============ SLIDE 2: THE IDEA ============ -->
+<div class="slide" id="s2">
+  <h2>One sentence.</h2>
+  <div class="big-prompt">"calm ocean waves at dusk"</div>
+  <div class="arrow-row">
+    <div class="pill">Text Prompt</div>
+    <div class="arr">→</div>
+    <div class="pill">System</div>
+    <div class="arr">→</div>
+    <div class="pill out">🎵 Music</div>
+    <div class="arr">+</div>
+    <div class="pill out">🎬 Visuals</div>
+  </div>
+  <div style="color:rgba(255,255,255,0.4); font-size:1rem; max-width:600px; text-align:center;">
+    No assets. No templates. No manual composition.<br>
+    Everything emerges from the text.
+  </div>
+</div>
+
+<!-- ============ SLIDE 3: PIPELINE ============ -->
+<div class="slide" id="s3">
+  <h2>How it works</h2>
+  <img src="presentation_pipeline.png" alt="Pipeline Diagram">
+  <div class="note">
+    Text → semantic scores → GA evolves melody → FM audio → FFT extracts frequencies → Perlin noise visuals modulated in real time
+  </div>
+</div>
+
+<!-- ============ SLIDE 4: SEMANTIC ANALYSIS ============ -->
+<div class="slide" id="s4">
+  <h2>Same system. Different meaning.</h2>
+  <img src="presentation_semantic.png" alt="Semantic Scores">
+  <div class="caption">
+    Prompt keywords map to 7 dimensions → different scores → different music, different visuals, different feel
+  </div>
+</div>
+
+<!-- ============ SLIDE 5: SCENE MODES ============ -->
+<div class="slide" id="s5">
+  <h2>Scene Modes</h2>
+  <div class="scene-grid">
+    <div class="scene-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/demo_ocean_sunset.mp4" type="video/mp4">
+      </video>
+      <div class="label">"ocean waves crashing at sunset"</div>
+    </div>
+    <div class="scene-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/av_1776732788.mp4" type="video/mp4">
+      </video>
+      <div class="label">"deep space nebula"</div>
+    </div>
+    <div class="scene-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/av_1776733036.mp4" type="video/mp4">
+      </video>
+      <div class="label">"green grassland meadow"</div>
+    </div>
+    <div class="scene-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/av_1776733140.mp4" type="video/mp4">
+      </video>
+      <div class="label">"dark forest canopy"</div>
+    </div>
+    <div class="scene-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/av_1776733338.mp4" type="video/mp4">
+      </video>
+      <div class="label">"golden sunset horizon"</div>
+    </div>
+    <div class="scene-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/demo_ocean_sunset.mp4" type="video/mp4">
+      </video>
+      <div class="label">"ocean waves crashing at sunset" (HQ)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SLIDE 6: LIVE DEMO ============ -->
+<div class="slide" id="s6">
+  <div class="demo-title">⚡ LIVE DEMO</div>
+  <div class="demo-prompts">
+    <div class="demo-prompt"><span class="num">1.</span>"calm ocean waves at dusk"</div>
+    <div class="demo-prompt"><span class="num">2.</span>"dying star collapsing into void"</div>
+    <div class="demo-prompt"><span class="num">3.</span>"hope rising through darkness"</div>
+  </div>
+  <div class="cmd">python cosmic_entropy.py --text "..." --audiovisual --av-width 640 --av-height 480</div>
+</div>
+
+<!-- ============ SLIDE 7: RESULTS ============ -->
+<div class="slide" id="s7">
+  <h2>Results — prompt drives everything</h2>
+  <div class="results-grid">
+    <div class="result-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/demo_ocean_sunset.mp4" type="video/mp4">
+      </video>
+      <div class="rlabel">"ocean waves crashing at sunset" — hope + isolation</div>
+    </div>
+    <div class="result-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/demo_dying_star.mp4" type="video/mp4">
+      </video>
+      <div class="rlabel">"dying star collapsing into darkness" — intensity + impermanence</div>
+    </div>
+    <div class="result-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/demo_hope_rising.mp4" type="video/mp4">
+      </video>
+      <div class="rlabel">"hope rising through the chaos" — hope + conflict</div>
+    </div>
+    <div class="result-card">
+      <video autoplay muted loop playsinline>
+        <source src="outputs/audiovisual/av_1776733140.mp4" type="video/mp4">
+      </video>
+      <div class="rlabel">"dark forest canopy" — isolation + hope</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SLIDE 8: WHAT'S NEXT ============ -->
+<div class="slide" id="s8">
+  <h2>What's Next</h2>
+  <div class="next-grid">
+    <div class="next-card">
+      <div class="icon">🎮</div>
+      <h3>Game Integration</h3>
+      <p>Real-time background generation driven by game state — biome, mood, tension level</p>
+    </div>
+    <div class="next-card">
+      <div class="icon">⚡</div>
+      <h3>Real-Time Rendering</h3>
+      <p>GPU-accelerated visuals — generate and play simultaneously, no pre-render wait</p>
+    </div>
+    <div class="next-card">
+      <div class="icon">🎵</div>
+      <h3>Richer Music</h3>
+      <p>Multi-instrument layers, chord progressions, rhythm patterns beyond single melody</p>
+    </div>
+  </div>
+  <div class="thanks">
+    Supervised by <strong>Dr. Joseph Alexander Brown</strong> · Thompson Rivers University
+  </div>
+</div>
+
+<!-- Navigation -->
+<div id="nav">
+  <span id="slide-counter">1 / 8</span>
+  <button onclick="changeSlide(-1)">◀ Prev</button>
+  <button onclick="changeSlide(1)">Next ▶</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let cur = 0;
+
+  function changeSlide(dir) {
+    slides[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(slides.length - 1, cur + dir));
+    slides[cur].classList.add('active');
+    document.getElementById('slide-counter').textContent = (cur+1) + ' / ' + slides.length;
+    // autoplay videos on slide enter
+    slides[cur].querySelectorAll('video').forEach(v => { v.currentTime = 0; v.play(); });
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);
+    if (e.key === 'ArrowLeft') changeSlide(-1);
+  });
+</script>
+</body>
+</html>

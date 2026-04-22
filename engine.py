@@ -14,6 +14,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
+# New imports for Audiovisual Feature
+try:
+    import numpy as np
+    import scipy.io.wavfile as wavfile
+    import scipy.signal as signal
+    from scipy.fft import fft
+    import imageio
+    HAS_AV_LIBS = True
+except ImportError:
+    HAS_AV_LIBS = False
+
 
 SHORT_RAMP = " .:-=+*#%@"
 DETAILED_RAMP = (
@@ -292,8 +303,15 @@ def parse_scene_intent(seed_text: str) -> SceneIntent:
         "radial": {"star", "sun", "sunflower", "flower", "planet", "moon", "galaxy", "orb", "burst"},
         "branching": {"tree", "forest", "branch", "root", "vine", "plant", "bamboo", "oak", "leaf"},
         "geometric": {"city", "tower", "machine", "robot", "ship", "building", "temple", "castle", "bridge"},
+        "terrain": {"terrain", "mountain", "rocky", "hills", "canyon", "desert", "cliffs", "peaks", "ground", "landscape"},
+        "ocean": {"ocean", "sea", "water", "wave", "waves", "shore", "beach", "reef", "underwater", "marine", "tide", "coastal", "lake", "river"},
+        "space_bg": {"space", "cosmos", "nebula", "galaxy", "stars", "asteroid", "void", "universe", "cosmic", "stellar", "orbit", "supernova"},
+        "grassland": {"grass", "grassland", "meadow", "field", "plains", "savanna", "prairie", "steppe", "lawn", "pasture"},
+        "forest_bg": {"forest", "jungle", "canopy", "woods", "woodland", "trees", "rainforest", "grove", "thicket", "foliage"},
+        "sunset": {"sunset", "sunrise", "dusk", "dawn", "twilight", "horizon", "sky", "clouds", "golden", "evening", "morning"},
     }
-    mode_scores = {"radial": 0.0, "branching": 0.0, "geometric": 0.0, "organic": 0.1}
+    mode_scores = {"radial": 0.0, "branching": 0.0, "geometric": 0.0, "terrain": 0.0, "organic": 0.1,
+                   "ocean": 0.0, "space_bg": 0.0, "grassland": 0.0, "forest_bg": 0.0, "sunset": 0.0}
     for t in tokens:
         for mode, vocab in mode_terms.items():
             if t in vocab:
@@ -939,98 +957,157 @@ class SemanticAnalyzer:
     def __init__(self) -> None:
         self.lexicons = {
             "impermanence": {
-                "dust",
-                "fade",
-                "gone",
-                "end",
-                "die",
-                "nothing",
-                "ruin",
-                "decay",
-                "time",
-                "temporary",
-                "lost",
-                "fall",
+                "dust", "fade", "gone", "end", "die", "dying", "death", "dead",
+                "nothing", "ruin", "ruined", "ruins", "decay", "decaying",
+                "time", "temporary", "lost", "fall", "falling", "fallen",
+                "fleeting", "transient", "vanish", "vanishing", "dissolve",
+                "drift", "drifting", "passing", "ephemeral", "mortal",
+                "wither", "withering", "crumble", "crumbling", "ash", "ashes",
+                "ghost", "echo", "memory", "forget", "forgotten", "shadow",
+                "mist", "fog", "fading", "erode", "eroding", "slip", "slipping",
+                "collapse", "collapsing", "wreck", "wreckage", "debris",
+                "remnant", "remains", "afterglow", "dusk", "twilight", "sunset",
             },
             "conflict": {
-                "war",
-                "fight",
-                "struggle",
-                "break",
-                "destroy",
-                "against",
-                "clash",
-                "chaos",
-                "control",
-                "force",
-                "tear",
+                "war", "fight", "struggle", "break", "destroy", "against", "clash",
+                "chaos", "control", "force", "tear", "tension", "shatter", "crack",
+                "fracture", "collide", "collision", "battle", "storm", "storming",
+                "rage", "raging", "violent", "violence", "crash", "turbulent",
+                "turbulence", "friction", "disruption", "disrupt", "turmoil",
+                "conflict", "enemy", "opposition", "resist", "resistance",
+                "pressure", "threat", "danger", "crisis", "catastrophe",
             },
             "hope": {
-                "survive",
-                "light",
-                "rebuild",
-                "new",
-                "start",
-                "live",
-                "seed",
-                "dawn",
-                "future",
-                "hope",
-                "persist",
-                "create",
+                "survive", "light", "rebuild", "new", "start", "live", "seed",
+                "dawn", "future", "hope", "persist", "create", "warm", "warmth",
+                "glow", "glowing", "rise", "rising", "bloom", "blooming", "grow",
+                "growing", "gentle", "soft", "tender", "peace", "peaceful", "calm",
+                "serene", "serenity", "tranquil", "quiet", "still", "stillness",
+                "breathe", "breathing", "float", "floating", "flow", "flowing",
+                "open", "opening", "clear", "clarity", "bright", "brightness",
+                "shine", "shining", "radiant", "golden", "spring", "life",
+                "beauty", "beautiful", "wonder", "pure", "heal", "healing",
+                "dream", "dreaming", "wish", "love", "harmony", "balance",
             },
             "certainty": {
-                "always",
-                "forever",
-                "must",
-                "truth",
-                "will",
-                "absolute",
-                "law",
-                "inevitable",
-                "fact",
-                "certain",
-                "bound",
+                "always", "forever", "must", "truth", "will", "absolute", "law",
+                "inevitable", "fact", "certain", "bound", "solid", "fixed", "stable",
+                "steady", "constant", "eternal", "infinite", "endless", "immovable",
+                "permanent", "definite", "clear", "sharp", "precise", "exact",
+                "foundation", "ground", "structure", "order", "system", "pattern",
             },
             "intensity": {
-                "fire",
-                "burn",
-                "explode",
-                "scream",
-                "crush",
-                "power",
-                "all",
-                "blood",
-                "rage",
-                "hard",
+                "fire", "burn", "burning", "explode", "explosion", "scream", "crush",
+                "power", "powerful", "blood", "rage", "hard", "electric", "surge",
+                "pulse", "pulsing", "vibrate", "vibrating", "intense", "blazing",
+                "blaze", "spark", "sparking", "ignite", "igniting", "energy",
+                "energetic", "wild", "fierce", "ferocious", "massive", "huge",
+                "vast", "extreme", "maximum", "peak", "apex", "star", "stellar",
+                "nuclear", "cosmic", "supernova", "inferno", "unstoppable",
+                "overwhelming", "tremendous", "colossal", "titanic", "roar",
             },
             "isolation": {
-                "alone",
-                "void",
-                "empty",
-                "cold",
-                "silence",
-                "space",
-                "dark",
-                "single",
-                "only",
-                "apart",
-                "solitude",
+                "alone", "void", "empty", "cold", "silence", "space", "dark",
+                "single", "only", "apart", "solitude", "lonely", "loneliness",
+                "distant", "distance", "far", "remote", "desolate", "desolation",
+                "abandoned", "forgotten", "hollow", "barren", "bleak", "sparse",
+                "minimal", "minimalist", "cosmic", "universe", "abyss",
+                "depth", "deep", "night", "midnight", "black", "numb",
+                "separated", "disconnected", "adrift", "nowhere", "endless",
+                "city", "urban", "crowd", "anonymous", "invisible", "unseen",
             },
             "self_focus": {
-                "i",
-                "me",
-                "my",
-                "self",
-                "identity",
-                "mind",
-                "soul",
-                "core",
-                "center",
+                "i", "me", "my", "self", "identity", "mind", "soul", "core",
+                "center", "within", "inner", "inside", "personal", "private",
+                "introspect", "reflect", "reflection", "consciousness", "aware",
+                "awareness", "ego", "being", "existence", "exist", "am", "feel",
+                "heart", "spirit", "psyche", "thought", "thoughts", "emotion",
             },
+        }
+        # Extra common words people type — mapped to nearest semantic bucket
+        self._extras = {
+            # impermanence
+            "rain": "impermanence", "rainy": "impermanence", "rain": "impermanence",
+            "wind": "impermanence", "windy": "impermanence",
+            "cloud": "impermanence", "cloudy": "impermanence",
+            "snow": "impermanence", "winter": "impermanence",
+            "autumn": "impermanence", "fall": "impermanence",
+            "leaf": "impermanence", "leaves": "impermanence",
+            "smoke": "impermanence", "steam": "impermanence",
+            "wave": "impermanence", "waves": "impermanence",
+            "river": "impermanence", "stream": "impermanence",
+            "sand": "impermanence", "tide": "impermanence",
+            "afternoon": "impermanence", "evening": "impermanence",
+            "melancholy": "impermanence", "melancholic": "impermanence",
+            "nostalgic": "impermanence", "nostalgia": "impermanence",
+            "robot": "certainty", "machine": "certainty", "metal": "certainty",
+            # conflict
+            "thunder": "conflict", "lightning": "conflict",
+            "earthquake": "conflict", "volcano": "conflict",
+            "hurricane": "conflict", "tornado": "conflict",
+            "fire": "conflict", "burning": "conflict",
+            "war": "conflict", "battle": "conflict",
+            "dark": "conflict", "darkness": "conflict",
+            "angry": "conflict", "anger": "conflict",
+            "fear": "conflict", "scary": "conflict", "horror": "conflict",
+            "pain": "conflict", "hurt": "conflict", "wound": "conflict",
+            # hope
+            "sun": "hope", "sunny": "hope", "sunshine": "hope",
+            "morning": "hope", "sunrise": "hope",
+            "flower": "hope", "flowers": "hope", "rose": "hope",
+            "bird": "hope", "birds": "hope", "singing": "hope",
+            "green": "hope", "nature": "hope",
+            "happy": "hope", "happiness": "hope", "joy": "hope", "joyful": "hope",
+            "love": "hope", "loving": "hope", "beautiful": "hope",
+            "soft": "hope", "gentle": "hope", "warm": "hope", "warmth": "hope",
+            "safe": "hope", "safety": "hope", "home": "hope",
+            "spring": "hope", "summer": "hope",
+            "ocean": "hope", "sea": "hope", "water": "hope",
+            "sky": "hope", "blue": "hope",
+            # intensity
+            "star": "intensity", "stars": "intensity", "galaxy": "intensity",
+            "explosion": "intensity", "exploding": "intensity",
+            "loud": "intensity", "noise": "intensity", "roar": "intensity",
+            "fast": "intensity", "speed": "intensity", "rush": "intensity",
+            "electric": "intensity", "lightning": "intensity",
+            "massive": "intensity", "giant": "intensity", "huge": "intensity",
+            "neon": "intensity", "bright": "intensity", "blinding": "intensity",
+            "city": "intensity", "urban": "intensity", "tokyo": "intensity",
+            "night": "intensity", "midnight": "intensity",
+            # isolation
+            "alone": "isolation", "lonely": "isolation", "loneliness": "isolation",
+            "desert": "isolation", "empty": "isolation", "barren": "isolation",
+            "space": "isolation", "cosmos": "isolation", "universe": "isolation",
+            "cold": "isolation", "frozen": "isolation", "ice": "isolation",
+            "silent": "isolation", "quiet": "isolation", "still": "isolation",
+            "lost": "isolation", "wandering": "isolation", "walking": "isolation",
+            "robot": "isolation", "android": "isolation",
+            "waiting": "isolation", "forgotten": "isolation",
+            # self_focus
+            "i": "self_focus", "me": "self_focus", "my": "self_focus",
+            "myself": "self_focus", "dream": "self_focus", "dreaming": "self_focus",
+            "memory": "self_focus", "remember": "self_focus", "remembering": "self_focus",
+            "thinking": "self_focus", "feeling": "self_focus", "mind": "self_focus",
         }
         self.negations = {"not", "no", "never", "without", "false", "illusion"}
         self.hedges = {"maybe", "perhaps", "might", "could", "possibly"}
+
+    def _fuzzy_match(self, word: str) -> Dict[str, float]:
+        """Stem/suffix match when exact word not in lexicon."""
+        hits: Dict[str, float] = {}
+        # Common suffixes to strip and retry
+        suffixes = ["ing", "ed", "er", "est", "ly", "ness", "tion", "ion", "s", "es"]
+        candidates = [word]
+        for suf in suffixes:
+            if word.endswith(suf) and len(word) - len(suf) >= 3:
+                candidates.append(word[: -len(suf)])
+        # Also try adding common suffixes to catch base→derived
+        for cat, lexicon in self.lexicons.items():
+            for cand in candidates[1:]:  # skip original — already checked exact
+                if cand in lexicon:
+                    hits[cat] = hits.get(cat, 0) + 0.6  # partial credit
+                    break
+        return hits
 
     def analyze(self, text: str) -> Dict[str, float]:
         words = re.findall(r"\b\w+\b", text.lower())
@@ -1042,9 +1119,20 @@ class SemanticAnalyzer:
         for i, word in enumerate(words):
             left = words[max(0, i - 2) : i]
             negated = any(n in left for n in self.negations)
+            matched = False
             for category, lexicon in self.lexicons.items():
                 if word in lexicon:
                     scores[category] += 0.5 if negated else 1.0
+                    matched = True
+            # Extras lookup for common words not in main lexicon
+            if not matched and word in self._extras:
+                cat = self._extras[word]
+                scores[cat] += 0.5 if negated else 0.8
+                matched = True
+            # Fuzzy stem fallback last resort
+            if not matched:
+                for category, val in self._fuzzy_match(word).items():
+                    scores[category] += (val * 0.5) if negated else val
 
         norm = max(1, int(wc * 0.18))
         for key in scores:
@@ -1061,6 +1149,13 @@ class SemanticAnalyzer:
             scores["certainty"] = clamp(scores["certainty"] + 0.1)
         if wc < 5:
             scores["isolation"] = clamp(scores["isolation"] + 0.15)
+
+        # If nothing matched at all, seed baseline so output isn't totally flat
+        total = sum(scores.values())
+        if total < 0.3:
+            scores["impermanence"] = 0.3
+            scores["hope"] = 0.25
+            scores["intensity"] = 0.2
 
         return scores
 
@@ -2139,6 +2234,908 @@ class CosmicEntropyGA:
                 executor.shutdown(wait=True)
 
 
+# --- Audiovisual Feature Implementation ---
+
+class AudiovisualGenerator:
+    """Generates music via evolution and drives high-clarity Perlin-based visuals."""
+
+    def __init__(self, semantic_params: Dict[str, float], output_dir: str = "outputs/audiovisual"):
+        self.params = semantic_params
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.sample_rate = 44100
+        self.fps = 30
+        
+        # Precompute permutation table for Perlin noise
+        self.p = np.arange(256, dtype=int)
+        rng = np.random.RandomState(42) # Localized random state for consistency
+        rng.shuffle(self.p)
+        self.p = np.stack([self.p, self.p]).flatten()
+
+    def _midi_to_freq(self, midi_note: int) -> float:
+        return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
+
+    def _generate_melody(self, duration_beats: int = 32) -> Tuple[List[Tuple[int, float, float]], float]:
+        """Co-evolutionary melody+rhythm generation with multi-objective fitness and adaptive mutation."""
+        energy = max(0.3, self.params.get("intensity", 0.5))
+        conflict = max(0.2, self.params.get("conflict", 0.5))
+        motion = max(0.3, conflict * 0.5 + self.params.get("impermanence", 0.5) * 0.5)
+        brightness = max(0.35, self.params.get("hope", 0.5))
+        density = max(0.4, 1.0 - self.params.get("isolation", 0.5) * 0.6)
+
+        target_tempo = 55 + energy * 95
+        is_major = brightness > 0.45
+        scale = [0, 2, 4, 7, 9] if is_major else [0, 3, 5, 7, 10]
+        root = int(48 + brightness * 8)
+        octave_choices = [0, 12]
+
+        if motion > 0.6:
+            dur_choices = [0.25, 0.5, 0.5, 1.0, 1.0, 2.0]
+        else:
+            dur_choices = [0.5, 1.0, 1.0, 2.0, 2.0, 4.0]
+
+        # Adaptive mutation: conflict drives how wild the evolution gets
+        base_mutation = 0.10 + conflict * 0.35
+        mutation_strength = 1 + int(conflict * 4)
+
+        pop_size = 40
+        gens = 50
+
+        class MelodyGenome:
+            def __init__(self, notes):
+                self.notes = notes
+                self.fitness = 0.0
+
+        class RhythmGenome:
+            def __init__(self, pattern):
+                self.pattern = pattern  # list of (duration, accent_bool)
+                self.fitness = 0.0
+
+        def init_melody_pop():
+            pop = []
+            for _ in range(pop_size):
+                notes = []
+                cur = 0.0
+                while cur < duration_beats:
+                    p = root + random.choice(scale) + random.choice(octave_choices)
+                    p = min(p, 67)
+                    d = random.choice(dur_choices)
+                    v = random.uniform(0.5, 0.9) if random.random() < density else 0.0
+                    if cur + d > duration_beats: d = duration_beats - cur
+                    notes.append((int(p), float(d), float(v)))
+                    cur += d
+                pop.append(MelodyGenome(notes))
+            return pop
+
+        def init_rhythm_pop():
+            pop = []
+            for _ in range(pop_size):
+                pattern = []
+                cur = 0.0
+                while cur < duration_beats:
+                    d = random.choice(dur_choices)
+                    if cur + d > duration_beats: d = duration_beats - cur
+                    accent = random.random() < (0.3 + energy * 0.4)
+                    pattern.append((float(d), accent))
+                    cur += d
+                pop.append(RhythmGenome(pattern))
+            return pop
+
+        def melody_fitness(mg, best_rhythm):
+            score = 0.0
+            active = [n for n in mg.notes if n[2] > 0]
+            if not active: return 0.0
+
+            # 1. Scale conformity
+            score += sum(1 for n in active if (n[0] - root) % 12 in scale) / len(active) * 4.0
+
+            # 2. Smoothness — penalize big leaps
+            if len(active) > 1:
+                leaps = [abs(active[i][0] - active[i-1][0]) for i in range(1, len(active))]
+                score += sum(max(0, 1 - (l / 7.0)) for l in leaps) / len(leaps) * 2.5
+
+            # 3. Tension/resolution — reward phrases that return to root or fifth
+            resolution_notes = {root % 12, (root + 7) % 12}
+            last_few = active[-3:] if len(active) >= 3 else active
+            resolves = sum(1 for n in last_few if n[0] % 12 in resolution_notes)
+            score += resolves * 1.5
+
+            # 4. Motif repetition — reward short patterns that appear more than once
+            if len(active) >= 6:
+                intervals = [active[i][0] - active[i-1][0] for i in range(1, len(active))]
+                motif_len = 3
+                motifs = [tuple(intervals[j:j+motif_len]) for j in range(len(intervals) - motif_len + 1)]
+                unique = set(motifs)
+                repeated = sum(1 for m in unique if motifs.count(m) > 1)
+                score += min(repeated, 3) * 1.5
+
+            # 5. Pitch range penalty
+            high_notes = sum(1 for n in active if n[0] > 67)
+            score -= high_notes * 2.0
+
+            # 6. Density match
+            score += (len(active) / max(len(mg.notes), 1)) * density * 2.0
+
+            # 7. Co-evolution: reward alignment with rhythm accents
+            if best_rhythm:
+                m_idx, r_idx = 0, 0
+                m_beat, r_beat = 0.0, 0.0
+                align_score = 0
+                align_total = 0
+                while m_idx < len(mg.notes) and r_idx < len(best_rhythm.pattern):
+                    if abs(m_beat - r_beat) < 0.01:
+                        if best_rhythm.pattern[r_idx][1] and mg.notes[m_idx][2] > 0.5:
+                            align_score += 1
+                        align_total += 1
+                    if m_beat <= r_beat:
+                        m_beat += mg.notes[m_idx][1]
+                        m_idx += 1
+                    else:
+                        r_beat += best_rhythm.pattern[r_idx][0]
+                        r_idx += 1
+                if align_total > 0:
+                    score += (align_score / align_total) * 2.0
+
+            return score
+
+        def rhythm_fitness(rg, best_melody):
+            score = 0.0
+            n_accents = sum(1 for _, a in rg.pattern if a)
+            total = len(rg.pattern)
+            if total == 0: return 0.0
+
+            # Accent density matches energy
+            ideal_ratio = 0.2 + energy * 0.4
+            actual_ratio = n_accents / total
+            score += max(0, 2.0 - abs(actual_ratio - ideal_ratio) * 5.0)
+
+            # Rhythmic variety
+            durs = set(d for d, _ in rg.pattern)
+            score += min(len(durs) / 3.0, 1.0) * motion * 2.0
+
+            # Downbeat accent reward (beat 0, 4, 8...)
+            cur = 0.0
+            for d, a in rg.pattern:
+                if a and (cur % 4.0) < 0.01:
+                    score += 0.5
+                cur += d
+
+            # Co-evolution: reward syncopation against melody
+            if best_melody:
+                active_beats = set()
+                cur = 0.0
+                for p, d, v in best_melody.notes:
+                    if v > 0: active_beats.add(round(cur, 2))
+                    cur += d
+                r_beat = 0.0
+                offbeats = 0
+                for d, a in rg.pattern:
+                    if a and round(r_beat, 2) not in active_beats:
+                        offbeats += 1
+                    r_beat += d
+                score += min(offbeats, 4) * conflict * 0.8
+
+            return score
+
+        melody_pop = init_melody_pop()
+        rhythm_pop = init_rhythm_pop()
+        best_melody = None
+        best_rhythm = None
+
+        for gen in range(gens):
+            # Evaluate melody fitness against best rhythm
+            for ind in melody_pop:
+                ind.fitness = melody_fitness(ind, best_rhythm)
+            melody_pop.sort(key=lambda x: x.fitness, reverse=True)
+            best_melody = melody_pop[0]
+
+            # Evaluate rhythm fitness against best melody
+            for ind in rhythm_pop:
+                ind.fitness = rhythm_fitness(ind, best_melody)
+            rhythm_pop.sort(key=lambda x: x.fitness, reverse=True)
+            best_rhythm = rhythm_pop[0]
+
+            if gen == gens - 1: break
+
+            # Adaptive mutation rate decays over generations but conflict keeps it high
+            gen_ratio = gen / gens
+            mutation_rate = base_mutation * (1.0 - gen_ratio * 0.5)
+
+            # Breed melody population
+            m_elites = melody_pop[:6]
+            next_m = m_elites[:]
+            while len(next_m) < pop_size:
+                p1, p2 = random.sample(m_elites, 2)
+                split = random.randint(1, min(len(p1.notes), len(p2.notes)) - 1)
+                child_notes = p1.notes[:split] + p2.notes[split:]
+                c_dur = sum(n[1] for n in child_notes)
+                if c_dur > duration_beats:
+                    child_notes = child_notes[:-1]
+                elif c_dur < duration_beats:
+                    child_notes.append((root, duration_beats - c_dur, 0.6))
+                if random.random() < mutation_rate:
+                    for _ in range(mutation_strength):
+                        m_idx = random.randrange(len(child_notes))
+                        n = list(child_notes[m_idx])
+                        n[0] = min(max(n[0] + random.choice([-3, -2, -1, 1, 2, 3]), 36), 67)
+                        child_notes[m_idx] = tuple(n)
+                if random.random() < mutation_rate * 0.5:
+                    m_idx = random.randrange(len(child_notes))
+                    n = list(child_notes[m_idx])
+                    n[2] = random.uniform(0.4, 0.9) if n[2] == 0 else 0.0
+                    child_notes[m_idx] = tuple(n)
+                next_m.append(MelodyGenome(child_notes))
+            melody_pop = next_m
+
+            # Breed rhythm population
+            r_elites = rhythm_pop[:6]
+            next_r = r_elites[:]
+            while len(next_r) < pop_size:
+                p1, p2 = random.sample(r_elites, 2)
+                split = random.randint(1, min(len(p1.pattern), len(p2.pattern)) - 1)
+                child_pat = p1.pattern[:split] + p2.pattern[split:]
+                c_dur = sum(d for d, _ in child_pat)
+                if c_dur > duration_beats:
+                    child_pat = child_pat[:-1]
+                elif c_dur < duration_beats:
+                    child_pat.append((duration_beats - c_dur, False))
+                if random.random() < mutation_rate:
+                    m_idx = random.randrange(len(child_pat))
+                    d, a = child_pat[m_idx]
+                    child_pat[m_idx] = (d, not a)
+                next_r.append(RhythmGenome(child_pat))
+            rhythm_pop = next_r
+
+        # Apply best rhythm accents to best melody velocities
+        final_notes = list(best_melody.notes)
+        m_beat, r_idx, r_beat = 0.0, 0, 0.0
+        for m_i in range(len(final_notes)):
+            while r_idx < len(best_rhythm.pattern) - 1 and r_beat + best_rhythm.pattern[r_idx][0] <= m_beat + 0.01:
+                r_beat += best_rhythm.pattern[r_idx][0]
+                r_idx += 1
+            if r_idx < len(best_rhythm.pattern) and best_rhythm.pattern[r_idx][1]:
+                p, d, v = final_notes[m_i]
+                final_notes[m_i] = (p, d, min(v * 1.3, 0.95))
+            m_beat += final_notes[m_i][1]
+
+        return final_notes, target_tempo
+
+    def _synthesize(self, melody: List[Tuple[int, float, float]], tempo: float) -> np.ndarray:
+        """Multi-layer synthesis: FM lead, pad chords, sub-bass, kick, reverb."""
+        from scipy.signal import butter, sosfilt
+        beat_dur = 60.0 / tempo
+        total_dur = sum(n[1] for n in melody) * beat_dur
+        sr = self.sample_rate
+        total_s = int(total_dur * sr)
+
+        lead_track = np.zeros(total_s)
+        pad_track = np.zeros(total_s)
+        bass_track = np.zeros(total_s)
+        kick_track = np.zeros(total_s)
+
+        energy = max(0.3, self.params.get("intensity", 0.5))
+        brightness = max(0.35, self.params.get("hope", 0.5))
+        isolation = self.params.get("isolation", 0.5)
+
+        beta = 0.4 + energy * 1.5
+
+        # --- Lead melody: dual-oscillator FM with vibrato ---
+        cur_s = 0
+        for pitch, dur_b, vel in melody:
+            dur_s = dur_b * beat_dur
+            num_s = int(dur_s * sr)
+            if num_s < 2: cur_s += num_s; continue
+
+            if vel > 0:
+                f_c = self._midi_to_freq(pitch)
+                t = np.linspace(0, dur_s, num_s, False)
+
+                vibrato = 0.003 * np.sin(2 * np.pi * 5.2 * t) * np.clip(t / 0.3, 0, 1)
+                fm_mod = beta * np.sin(2 * np.pi * f_c * 2.0 * t)
+                osc1 = np.sin(2 * np.pi * f_c * (1.0 + vibrato) * t + fm_mod)
+                osc2 = np.sin(2 * np.pi * f_c * 1.002 * t + fm_mod * 0.6) * 0.5
+
+                a_s = max(int(sr * 0.05), int(num_s * 0.10))
+                d_s = max(int(sr * 0.06), int(num_s * 0.15))
+                r_s = max(int(sr * 0.10), int(num_s * 0.30))
+                s_level = 0.7
+                env = np.ones(num_s) * s_level
+                env[:a_s] = np.linspace(0.0, 1.0, a_s)
+                env[a_s:a_s + d_s] = np.linspace(1.0, s_level, d_s)
+                env[-r_s:] = np.linspace(env[-r_s] if r_s < num_s else s_level, 0.0, r_s)
+
+                wave = (osc1 + osc2) * env * vel * 0.35
+                end_s = min(cur_s + num_s, total_s)
+                lead_track[cur_s:end_s] += wave[:end_s - cur_s]
+
+            cur_s += num_s
+
+        # --- Pad layer: soft chord tones that sustain under melody ---
+        is_major = brightness > 0.45
+        root_midi = int(48 + brightness * 8)
+        if is_major:
+            chord_intervals = [0, 4, 7, 12]
+        else:
+            chord_intervals = [0, 3, 7, 12]
+        pad_notes = [self._midi_to_freq(root_midi + iv - 12) for iv in chord_intervals]
+        t_full = np.linspace(0, total_dur, total_s, False)
+        for pf in pad_notes:
+            slow_lfo = 0.002 * np.sin(2 * np.pi * 0.15 * t_full + pf)
+            pad_osc = np.sin(2 * np.pi * pf * (1.0 + slow_lfo) * t_full)
+            pad_track += pad_osc
+        pad_env = np.ones(total_s)
+        fade_in = min(int(sr * 2.0), total_s // 4)
+        fade_out = min(int(sr * 1.5), total_s // 4)
+        pad_env[:fade_in] = np.linspace(0, 1, fade_in)
+        pad_env[-fade_out:] = np.linspace(1, 0, fade_out)
+        pad_vol = 0.08 + isolation * 0.06
+        pad_track = pad_track / max(len(pad_notes), 1) * pad_env * pad_vol
+
+        # --- Sub-bass: continuous low sine following root ---
+        sub_freq = self._midi_to_freq(root_midi - 24)
+        sub_lfo = 1.0 + 0.01 * np.sin(2 * np.pi * 0.1 * t_full)
+        sub_osc = np.sin(2 * np.pi * sub_freq * sub_lfo * t_full)
+        sub_env = pad_env.copy()
+        bass_track = sub_osc * sub_env * 0.15
+
+        # --- Kick: punchy on downbeats, softer on offbeats ---
+        beat_s = int(beat_dur * sr)
+        kick_freq = self._midi_to_freq(36)
+        for beat_idx in range(int(total_dur / beat_dur)):
+            onset = beat_idx * beat_s
+            kick_len = min(int(sr * 0.22), total_s - onset)
+            if kick_len < 2: break
+            t_k = np.linspace(0, 0.22, kick_len, False)
+            freq_env = kick_freq * np.exp(-t_k * 14.0) + kick_freq * 0.4
+            kick = np.sin(2 * np.pi * freq_env * t_k)
+            kick_env = np.exp(-t_k * 12.0)
+            accent = 0.45 if beat_idx % 4 == 0 else 0.25
+            kick *= kick_env * accent * energy
+            kick_track[onset:onset + kick_len] += kick
+
+        # --- Mix all layers ---
+        audio = lead_track * 0.45 + pad_track * 0.25 + bass_track * 0.15 + kick_track * 0.15
+
+        # Low-pass: 4000 Hz for warmth
+        sos = butter(4, 4000.0, btype='low', fs=sr, output='sos')
+        audio = sosfilt(sos, audio)
+
+        # Normalize
+        peak = np.max(np.abs(audio))
+        if peak > 0:
+            audio /= peak
+
+        # Reverb: longer tail for atmosphere
+        d1 = int(0.22 * sr)
+        d2 = int(0.45 * sr)
+        d3 = int(0.72 * sr)
+        rev = np.zeros(len(audio) + d3)
+        rev[:len(audio)] = audio
+        rev[d1:d1 + len(audio)] += audio * 0.22
+        rev[d2:d2 + len(audio)] += audio * 0.14
+        rev[d3:d3 + len(audio)] += audio * 0.08
+        audio = rev[:total_s]
+
+        # Soft limiter
+        audio = np.tanh(audio * 0.9)
+
+        return audio
+
+    def _perlin_3d(self, x, y, z):
+        """Vectorized 3D Perlin Noise."""
+        # Simple hashing for NumPy
+        def fade(t): return t * t * t * (t * (t * 6 - 15) + 10)
+        def lerp(t, a, b): return a + t * (b - a)
+        
+        x = np.asarray(x); y = np.asarray(y); z = np.asarray(z)
+        if z.ndim == 0: z = np.full_like(x, float(z))
+        X = x.astype(int) & 255
+        Y = y.astype(int) & 255
+        Z = z.astype(int) & 255
+        xf = x - x.astype(int)
+        yf = y - y.astype(int)
+        zf = z - z.astype(int)
+        u, v, w = fade(xf), fade(yf), fade(zf)
+        
+        p = self.p  # use precomputed table from __init__, not rebuilt every call
+        
+        def grad(hash, x, y, z):
+            h = hash & 15
+            u = np.where(h < 8, x, y)
+            v = np.where(h < 4, y, np.where((h == 12) | (h == 14), x, z))
+            return np.where(h & 1, -u, u) + np.where(h & 2, -v, v)
+
+        A = p[X] + Y
+        AA = p[A] + Z
+        AB = p[A + 1] + Z
+        B = p[X + 1] + Y
+        BA = p[B] + Z
+        BB = p[B + 1] + Z
+        
+        return lerp(w, lerp(v, lerp(u, grad(p[AA], xf, yf, zf), grad(p[BA], xf - 1, yf, zf)),
+                               lerp(u, grad(p[AB], xf, yf - 1, zf), grad(p[BB], xf - 1, yf - 1, zf))),
+                       lerp(v, lerp(u, grad(p[AA + 1], xf, yf, zf - 1), grad(p[BA + 1], xf - 1, yf, zf - 1)),
+                               lerp(u, grad(p[AB + 1], xf, yf - 1, zf - 1), grad(p[BB + 1], xf - 1, yf - 1, zf - 1))))
+
+    def _fbm(self, x, y, z, octaves=3):
+        """Fractional Brownian Motion for detail."""
+        v = 0.0
+        a = 0.5
+        f = 1.0
+        for _ in range(octaves):
+            v += a * self._perlin_3d(x * f, y * f, z * f)
+            a *= 0.5
+            f *= 2.0
+        return v
+
+    def _ridged_fbm(self, x, y, z, octaves=3):
+        """Ridged fBm for sharp mountain-like structures."""
+        v = 0.0
+        a = 0.5
+        f = 1.0
+        for _ in range(octaves):
+            n = self._perlin_3d(x * f, y * f, z * f)
+            n = 1.0 - np.abs(n)
+            n = n * n # Sharpen ridges
+            v += a * n
+            a *= 0.5
+            f *= 2.0
+        return v
+
+    def generate(self, prompt: str, width: int = 640, height: int = 480, intent: SceneIntent = None, duration_sec: float = None):
+        if not HAS_AV_LIBS:
+            print("[ERROR] Audiovisual libraries (numpy, scipy, imageio) not found.")
+            return
+
+        print(f"[SYSTEM] Generating Audiovisual Scene: '{prompt}'")
+        mode = intent.mode if intent else "organic"
+        
+        # 1. Music
+        melody, tempo = self._generate_melody()
+        audio = self._synthesize(melody, tempo)
+        audio = np.tile(audio, 2)
+        
+        timestamp = int(time.time())
+        wav_path = self.output_dir / f"av_{timestamp}.wav"
+        wav_audio = np.int16(audio * 32767)
+        wavfile.write(str(wav_path), self.sample_rate, wav_audio)
+        
+        # 2. Audio Analysis
+        samples_per_frame = self.sample_rate // self.fps
+        num_frames = len(audio) // samples_per_frame
+        if duration_sec is not None:
+            num_frames = min(num_frames, int(duration_sec * self.fps))
+        
+        # 3. Render Video
+        mp4_path = self.output_dir / f"av_{timestamp}.mp4"
+        writer = imageio.get_writer(str(mp4_path), fps=self.fps)
+        
+        yy, xx = np.mgrid[0:height, 0:width]
+        
+        brightness = self.params.get("hope", 0.5)
+        sem_conflict = self.params.get("conflict", 0.5)
+        sem_impermanence = self.params.get("impermanence", 0.5)
+        sem_isolation = self.params.get("isolation", 0.5)
+        sem_intensity = self.params.get("intensity", 0.5)
+        sem_certainty = self.params.get("certainty", 0.5)
+        sem_self_focus = self.params.get("self_focus", 0.5)
+
+        # Derived visual parameters from semantic scores
+        warp_strength = 0.5 + sem_conflict * 1.5          # domain warp intensity
+        drift_speed = 0.012 + sem_impermanence * 0.025    # base z_time speed
+        vignette_str = 0.3 + sem_isolation * 0.45          # edge darkening
+        bloom_intensity = 0.3 + sem_intensity * 0.5        # glow on bright areas
+        contrast_punch = 0.7 + sem_intensity * 0.25        # S-curve gamma
+        fbm_octaves = 3 + int(sem_certainty * 3)           # noise detail (3-6)
+        sat_boost = 1.1 + (1.0 - sem_isolation) * 0.4      # desaturate when isolated
+        focal_weight = 0.0 + sem_self_focus * 0.3           # center brightness bias
+
+        print(f"[SYSTEM] Rendering {num_frames} frames at {width}x{height} (Mode: {mode})...")
+        print(f"  Semantic visual params: warp={warp_strength:.2f} drift={drift_speed:.3f} vig={vignette_str:.2f} bloom={bloom_intensity:.2f} oct={fbm_octaves}")
+
+        # Pre-compute FFT bands for all frames so we can normalize by running max
+        print("[SYSTEM] Pre-computing FFT bands...")
+        all_bass = np.zeros(num_frames)
+        all_mid  = np.zeros(num_frames)
+        all_treb = np.zeros(num_frames)
+        for _i in range(num_frames):
+            _start = _i * samples_per_frame
+            _seg = audio[_start:_start + samples_per_frame]
+            if len(_seg) < samples_per_frame:
+                _seg = np.pad(_seg, (0, samples_per_frame - len(_seg)))
+            _spec = np.abs(fft(_seg * np.hanning(len(_seg))))[:samples_per_frame // 2]
+            all_bass[_i] = np.sum(_spec[:samples_per_frame // 20])
+            all_mid[_i]  = np.sum(_spec[samples_per_frame // 20:samples_per_frame // 5])
+            all_treb[_i] = np.sum(_spec[samples_per_frame // 5:])
+        max_bass = max(all_bass.max(), 1e-6)
+        max_mid  = max(all_mid.max(),  1e-6)
+        max_treb = max(all_treb.max(), 1e-6)
+        all_bass /= max_bass; all_mid /= max_mid; all_treb /= max_treb
+
+        # Smooth bands with EMA to eliminate per-frame jitter / shaky-camera effect
+        alpha = 0.15
+        for _i in range(1, num_frames):
+            all_bass[_i] = alpha * all_bass[_i] + (1 - alpha) * all_bass[_i - 1]
+            all_mid[_i]  = alpha * all_mid[_i]  + (1 - alpha) * all_mid[_i - 1]
+            all_treb[_i] = alpha * all_treb[_i] + (1 - alpha) * all_treb[_i - 1]
+
+        for i in range(num_frames):
+            if i % 30 == 0: print(f"  Frame {i}/{num_frames}")
+
+            nb = float(all_bass[i])
+            nm = float(all_mid[i])
+            nt = float(all_treb[i])
+            
+            z_time = i * (drift_speed + nt * 0.03)
+            
+            if mode == "terrain":
+                # --- Cinematic Oblique Terrain Perspective ---
+                scale = 160.0 - nb * 70.0
+                
+                # We render a larger internal area to allow for the perspective tilt
+                # and looking "into" the distance.
+                # Sample points: X is width, Y is 'depth' into the scene
+                depth_samples = height
+                
+                # Initialize a dark frame (valley/mist floor)
+                r = np.full((height, width), 20 + nt * 20, dtype=float)
+                g = np.full((height, width), 15 + nm * 15, dtype=float)
+                b = np.full((height, width), 25 + nb * 20, dtype=float)
+                
+                # Perspective height buffer to handle occlusion (simple painter's algorithm)
+                # We iterate from back (far) to front (near)
+                for sy in range(depth_samples - 1, -1, -1):
+                    # Far rows move slower (z_time offset)
+                    row_z = z_time + (sy / depth_samples) * 0.5
+                    
+                    # Coordinate scaling: rows further away (high sy) are sampled higher up in the noise
+                    y_in = (sy + (i * 0.2)) / scale 
+                    x_in = xx[0, :] / scale
+                    
+                    # Multi-scale terrain height
+                    base = self._fbm(x_in * 0.8, y_in * 0.8, row_z, octaves=3)
+                    ridges = self._ridged_fbm(x_in * 2.5, y_in * 2.5, row_z, octaves=4)
+                    detail = self._fbm(x_in * 8.0, y_in * 8.0, row_z, octaves=2) * 0.12
+                    
+                    h_map = 0.5 * base + 0.4 * ridges + detail
+                    h_map = (h_map + 1.0) / 2.0
+                    h_map = np.power(h_map, 2.0) # Sharp contrast
+                    
+                    # Project onto screen:
+                    # screen_y = base_y - height_offset
+                    # base_y is the row index, height_offset is scaled by elevation
+                    # Far rows (high sy) appear higher on screen (low row_idx)
+                    h_scale = 60.0 + nb * 40.0
+                    screen_y = sy - (h_map * h_scale)
+                    screen_y = screen_y.astype(int)
+                    
+                    # Shading for this row
+                    eps = 0.05
+                    h_x1 = 0.5 * self._fbm((xx[0, :]+1)/scale * 0.8, y_in * 0.8, row_z) + 0.4 * self._ridged_fbm((xx[0, :]+1)/scale * 2.5, y_in * 2.5, row_z)
+                    h_x0 = 0.5 * self._fbm((xx[0, :]-1)/scale * 0.8, y_in * 0.8, row_z) + 0.4 * self._ridged_fbm((xx[0, :]-1)/scale * 2.5, y_in * 2.5, row_z)
+                    dx = (h_x1 - h_x0) * 3.0
+                    dy_arr = np.full_like(h_map, -0.5) # Constant forward slope for oblique look
+                    
+                    nz = np.ones_like(h_map) * 0.5
+                    norm = np.stack([-dx, -dy_arr, nz], axis=-1)
+                    norm /= np.linalg.norm(norm, axis=-1, keepdims=True)
+                    
+                    light_dir = np.array([0.8, 0.4, 0.9])
+                    light_dir /= np.linalg.norm(light_dir)
+                    shade = 0.2 + 0.8 * np.clip(np.sum(norm * light_dir, axis=-1), 0, 1)
+                    shade *= (0.4 + 0.6 * h_map) # Occulsion
+                    
+                    # Colors
+                    r_base = np.where(h_map > 0.82, 255, np.where(h_map > 0.45, 120, 65))
+                    g_base = np.where(h_map > 0.82, 250, np.where(h_map > 0.45, 110, 55))
+                    b_base = np.where(h_map > 0.82, 255, np.where(h_map > 0.45, 100, 45))
+                    
+                    row_r = r_base * shade + nt * 30
+                    row_g = g_base * shade + nm * 15
+                    row_b = b_base * shade + nb * 20
+                    
+                    # Draw into buffer (handle only visible pixels)
+                    for x in range(width):
+                        py = screen_y[x]
+                        if 0 <= py < height:
+                            # Draw column from projected Y down to the sy row base
+                            # creating a "solid" look for the terrain slice
+                            end_y = min(height, sy + 1)
+                            r[py:end_y, x] = row_r[x]
+                            g[py:end_y, x] = row_g[x]
+                            b[py:end_y, x] = row_b[x]
+            elif mode == "ocean":
+                # --- Ocean ---
+                sky_h = int(height * 0.38)
+                sky_t = yy[:sky_h, :] / max(sky_h, 1)
+
+                # Sunset gradient sky: deep indigo top → warm amber/peach horizon
+                r_sky = (25 + sky_t * 200 + nt * 12).clip(0, 255)
+                g_sky = (40 + sky_t * 100 + nm * 8).clip(0, 255)
+                b_sky = (140 - sky_t * 70 + nb * 6).clip(0, 255)
+
+                # Cloud wisps in sky
+                cloud_x = xx[:sky_h, :] / 120.0
+                cloud_y = yy[:sky_h, :] / 60.0
+                clouds = self._fbm(cloud_x, cloud_y, z_time * 0.03, octaves=fbm_octaves)
+                clouds = np.clip((clouds + 1.0) / 2.0 - 0.35, 0, 1) ** 1.2
+                cloud_lit = clouds * np.clip(sky_t * 2.0, 0, 1)
+                r_sky = np.clip(r_sky + cloud_lit * 90, 0, 255)
+                g_sky = np.clip(g_sky + cloud_lit * 55, 0, 255)
+                b_sky = np.clip(b_sky + cloud_lit * 25, 0, 255)
+
+                # Sun glow near horizon
+                sun_cx = width * 0.55
+                streak_x = np.abs(xx[:sky_h, :] - sun_cx) / width
+                horizon_band = np.clip(1.0 - sky_t * 2.8, 0, 1) ** 1.5
+                sun_haze = np.clip(1.0 - streak_x * 3.0, 0, 1) ** 2.0 * horizon_band
+                r_sky = np.clip(r_sky + sun_haze * 130, 0, 255)
+                g_sky = np.clip(g_sky + sun_haze * 70, 0, 255)
+                b_sky = np.clip(b_sky + sun_haze * 20, 0, 255)
+
+                # Water
+                wx = xx[sky_h:, :] / 65.0
+                wy = yy[sky_h:, :] / 48.0
+                depth_t = (yy[sky_h:, :] - sky_h) / max(height - sky_h, 1)
+                wave1 = self._perlin_3d(wx, wy, np.full_like(wx, z_time * 0.7))
+                wave2 = self._perlin_3d(wx * 2.3 + 3.7, wy * 2.1, np.full_like(wx, z_time * 1.1 + 1.5)) * 0.4
+                wave3 = self._perlin_3d(wx * 4.5, wy * 4.2, np.full_like(wx, z_time * 1.8)) * 0.15
+                wave4 = self._perlin_3d(wx * 8.0 + 5.0, wy * 7.5, np.full_like(wx, z_time * 2.5)) * 0.06
+                waves = (wave1 + wave2 + wave3 + wave4 + 1.0) / 2.0
+
+                # Color: deep dark teal far → richer blue-green near
+                r_w = (5   + depth_t * 25  + waves * (20 + nm * 14) + nb * 10).clip(0, 255)
+                g_w = (30  + depth_t * 70  + waves * (50 + nm * 18) + nb * 6 ).clip(0, 255)
+                b_w = (80  + depth_t * 60  + waves * (55 + nb * 20)          ).clip(0, 255)
+
+                # Sunset reflection on water — warm orange/gold path from sun
+                refl_x = np.abs(xx[sky_h:, :] - sun_cx) / width
+                refl_width = 0.08 + depth_t * 0.15
+                refl_core = np.exp(-0.5 * (refl_x / refl_width) ** 2)
+                refl_fade = np.clip(1.0 - depth_t * 1.8, 0.05, 1)
+                refl_shimmer = waves * 0.3 + 0.7
+                refl = refl_core * refl_fade * refl_shimmer
+                r_w = np.clip(r_w + refl * 180, 0, 255)
+                g_w = np.clip(g_w + refl * 100, 0, 255)
+                b_w = np.clip(b_w + refl * 25,  0, 255)
+
+                # Specular sparkle on wave peaks
+                sparkle = np.clip((waves - 0.72) * 8.0, 0, 1)
+                sparkle *= refl_core * 0.4 + 0.1
+                r_w = np.clip(r_w + sparkle * 200, 0, 255)
+                g_w = np.clip(g_w + sparkle * 180, 0, 255)
+                b_w = np.clip(b_w + sparkle * 140, 0, 255)
+
+                # Foam on crests
+                foam = np.clip((waves - 0.80) * 10.0, 0, 1)
+                foam *= (1.0 - depth_t * 0.6)
+                r_w = r_w + foam * (235 - r_w)
+                g_w = g_w + foam * (242 - g_w)
+                b_w = b_w + foam * (248 - b_w)
+
+                r = np.zeros((height, width), dtype=float)
+                g = np.zeros((height, width), dtype=float)
+                b = np.zeros((height, width), dtype=float)
+                r[:sky_h,:]=r_sky; g[:sky_h,:]=g_sky; b[:sky_h,:]=b_sky
+                r[sky_h:,:]=r_w;   g[sky_h:,:]=g_w;   b[sky_h:,:]=b_w
+
+            elif mode == "space_bg":
+                # --- Space ---
+                x_in = xx / 160.0
+                y_in = yy / 160.0
+                neb = self._fbm(x_in, y_in, z_time * 0.08, octaves=fbm_octaves)
+                neb = (neb + 1.0) / 2.0
+                neb2 = self._fbm(x_in * 1.8 + 7.3, y_in * 1.8, z_time * 0.05, octaves=max(3, fbm_octaves - 1))
+                neb2 = (neb2 + 1.0) / 2.0
+                # Multi-color nebula: blue core, purple mid, pink edge
+                r = (neb * 80  + neb2 * 60  + nt * 25).clip(0, 255)
+                g = (neb * 20  + neb2 * 15  + nm * 15).clip(0, 255)
+                b = (neb * 160 + neb2 * 100 + nb * 40).clip(0, 255)
+                # Nebula color tint zones
+                r = np.clip(r + neb2 * 60, 0, 255)  # pink fringe
+                # Stars: two sizes
+                sx = (xx * 73856093) ^ (yy * 19349663)
+                star_sm = ((sx % 701) < 2).astype(float) * ((sx % 255) / 255.0)
+                star_lg = ((sx % 2003) < 2).astype(float)
+                twinkle = 0.65 + 0.35 * np.sin(z_time * 2.5 + (xx * 0.4 + yy * 0.6) % (2*np.pi))
+                star_sm *= twinkle; star_lg *= twinkle
+                # Large stars get a tiny glow
+                from scipy.ndimage import uniform_filter as _uf
+                star_glow = _uf(star_lg, size=5) * 0.4
+                r = np.clip(r + star_sm * 220 + star_lg * 255 + star_glow * 180, 0, 255)
+                g = np.clip(g + star_sm * 220 + star_lg * 255 + star_glow * 160, 0, 255)
+                b = np.clip(b + star_sm * 255 + star_lg * 255 + star_glow * 255, 0, 255)
+
+            elif mode == "grassland":
+                # --- Grassland ---
+                sky_h = int(height * 0.42)
+                sky_t = yy[:sky_h, :] / max(sky_h, 1)
+                # Sky: deep azure top → pale horizon
+                r_sky = (80  + sky_t * 90 + nt * 12).clip(0, 255)
+                g_sky = (140 + sky_t * 70 + nm * 8 ).clip(0, 255)
+                b_sky = (210 - sky_t * 30            ).clip(0, 255)
+                # Fluffy clouds
+                cl_x = xx[:sky_h, :] / 130.0
+                cl_y = yy[:sky_h, :] / 60.0
+                clouds = self._fbm(cl_x, cl_y, z_time * 0.03, octaves=fbm_octaves)
+                cloud_mask = np.clip((clouds + 1.0) / 2.0 - 0.55, 0, 1) * 3.0
+                r_sky = np.clip(r_sky + cloud_mask * (240 - r_sky) * 0.9, 0, 255)
+                g_sky = np.clip(g_sky + cloud_mask * (245 - g_sky) * 0.9, 0, 255)
+                b_sky = np.clip(b_sky + cloud_mask * (248 - b_sky) * 0.9, 0, 255)
+
+                gx = xx[sky_h:, :] / 90.0
+                gy = yy[sky_h:, :] / 70.0
+                wind = self._perlin_3d(gx * 3.0, gy * 1.5, np.full_like(gx, z_time * 1.5))
+                base_grass = self._fbm(gx * 0.6, gy * 0.6, z_time * 0.04, octaves=fbm_octaves)
+                h_grass = (base_grass + wind * 0.18 + 1.0) / 2.0
+                depth_t = (yy[sky_h:, :] - sky_h) / max(height - sky_h, 1)
+                # Rich greens: dark foreground, bright highlight mid, yellow-green far
+                r_g = (20  + h_grass * 55  + depth_t * 50 + nb * 8 ).clip(0, 255)
+                g_g = (70  + h_grass * 130 + depth_t * 25 + nm * 18).clip(0, 255)
+                b_g = (10  + h_grass * 25  + depth_t * 15           ).clip(0, 255)
+
+                r = np.zeros((height,width),dtype=float); g = np.zeros_like(r); b = np.zeros_like(r)
+                r[:sky_h,:]=r_sky; g[:sky_h,:]=g_sky; b[:sky_h,:]=b_sky
+                r[sky_h:,:]=r_g;   g[sky_h:,:]=g_g;   b[sky_h:,:]=b_g
+
+            elif mode == "forest_bg":
+                # --- Forest ---
+                sky_h = int(height * 0.12)
+                sky_t = yy[:sky_h, :] / max(sky_h, 1)
+                r_sky = (100 + sky_t * 30).clip(0, 255)
+                g_sky = (160 + sky_t * 40).clip(0, 255)
+                b_sky = (200 + sky_t * 20).clip(0, 255)
+
+                cx2 = xx[sky_h:, :] / 60.0
+                cy2 = yy[sky_h:, :] / 50.0
+                canopy = self._fbm(cx2 * 0.8, cy2 * 1.6, z_time * 0.07, octaves=fbm_octaves)
+                canopy = (canopy + 1.0) / 2.0
+                depth_t = (yy[sky_h:, :] - sky_h) / max(height - sky_h, 1)
+
+                # Volumetric-style light shafts from top
+                shaft_nx = xx[sky_h:, :] / (38.0 + nb * 18.0)
+                shaft = self._perlin_3d(shaft_nx, cy2 * 0.25, np.full_like(cx2, z_time * 0.04))
+                shaft = np.clip((shaft + 1.0) / 2.0 - 0.38, 0, 1) ** 1.5
+                shaft_fade = np.clip(1.0 - depth_t * 1.8, 0, 1)
+                shaft *= shaft_fade
+
+                # Dark rich forest greens, dappled light
+                r_f = (5  + canopy * 35  + depth_t * 15 + shaft * 100 + nm * 8 ).clip(0, 255)
+                g_f = (20 + canopy * 90  + depth_t * 25 + shaft * 130 + nt * 12).clip(0, 255)
+                b_f = (5  + canopy * 20  + depth_t * 8  + shaft * 50            ).clip(0, 255)
+
+                r = np.zeros((height,width),dtype=float); g = np.zeros_like(r); b = np.zeros_like(r)
+                r[:sky_h,:]=r_sky; g[:sky_h,:]=g_sky; b[:sky_h,:]=b_sky
+                r[sky_h:,:]=r_f;   g[sky_h:,:]=g_f;   b[sky_h:,:]=b_f
+
+            elif mode == "sunset":
+                # --- Sunset ---
+                t_sky = yy / height
+                horizon_dist = np.abs(t_sky - 0.60)
+                horizon_glow = np.clip(1.0 - horizon_dist * 6.0, 0, 1)
+
+                # Sky: deep purple/navy top → fiery orange/yellow horizon
+                r = (15  + t_sky * 220 + horizon_glow * 100 + nt * 20).clip(0, 255)
+                g = (5   + t_sky * 70  + horizon_glow * 50  + nm * 10).clip(0, 255)
+                b = (80  + (1.0 - t_sky) * 130 - horizon_glow * 40   ).clip(0, 255)
+
+                # Cloud wisps
+                cx3 = xx / (110.0 - nm * 35.0)
+                cy3 = yy / 55.0
+                clouds = self._fbm(cx3, cy3, z_time * 0.04, octaves=fbm_octaves)
+                clouds = (clouds + 1.0) / 2.0
+                cloud_mask = np.clip(clouds - 0.50, 0, 1) * 2.5
+                # Clouds lit orange near horizon, white higher up
+                cloud_r = 240 * (1.0 - t_sky * 0.3)
+                cloud_g = 140 * (1.0 - t_sky * 0.5)
+                cloud_b = 60  * (1.0 - t_sky * 0.8)
+                r = np.clip(r + cloud_mask * (cloud_r - r) * 0.75, 0, 255)
+                g = np.clip(g + cloud_mask * (cloud_g - g) * 0.60, 0, 255)
+                b = np.clip(b + cloud_mask * (cloud_b - b) * 0.40, 0, 255)
+
+                # Sun disc + halo
+                sun_x2, sun_y2 = width * 0.52, height * 0.60
+                sun_d2 = np.sqrt((xx - sun_x2)**2 + (yy - sun_y2)**2)
+                sun_r2 = width * 0.055
+                sun_disc = np.clip(1.0 - (sun_d2 - sun_r2*0.3) / (sun_r2 * 0.7), 0, 1)
+                halo     = np.clip(1.0 - sun_d2 / (sun_r2 * 6.0), 0, 1) ** 2
+                r = np.clip(r + sun_disc * 255 + halo * 200, 0, 255)
+                g = np.clip(g + sun_disc * 230 + halo * 90,  0, 255)
+                b = np.clip(b + sun_disc * 80,               0, 255)
+
+            else:
+                # --- Abstract Liquid Mode ---
+                scale = 85.0
+                x_in, y_in = xx / scale, yy / scale
+                wf = warp_strength
+                q_x = self._fbm(x_in, y_in, z_time, octaves=fbm_octaves)
+                q_y = self._fbm(x_in + 5.2, y_in + 1.3, z_time, octaves=fbm_octaves)
+                r_x = self._fbm(x_in + wf * 2.5 * q_x + 1.7, y_in + wf * 2.5 * q_y + 9.2, z_time, octaves=fbm_octaves)
+                r_y = self._fbm(x_in + wf * 2.5 * q_x + 8.3, y_in + wf * 2.5 * q_y + 2.8, z_time, octaves=fbm_octaves)
+                f = self._fbm(x_in + wf * 2.5 * r_x, y_in + wf * 2.5 * r_y, z_time, octaves=fbm_octaves)
+
+                f = (f + 1.0) / 2.0
+                z_val = np.clip(-10 * (f - 0.5), -500, 500)
+                f = 1.0 / (1.0 + np.exp(z_val))
+
+                r = 30 + f * (60 + brightness * 195) + nt * 60
+                g = 20 + f * (40 + (1.0 - abs(brightness - 0.5) * 2) * 120) + nm * 50
+                b = 40 + f * (80 + (1.0 - brightness) * 135) + nb * 80
+            
+            frame = np.stack([r, g, b], axis=-1).clip(0, 255)
+
+            # --- Post-processing pipeline ---
+            f32 = frame / 255.0
+
+            # 1. Gamma correction — intensity drives contrast punch
+            gamma = contrast_punch
+            f32 = np.power(np.clip(f32, 1e-6, 1.0), gamma)
+
+            # 2. S-curve contrast
+            f32 = f32 * (f32 * (3.0 - 2.0 * f32))
+
+            # 3. Saturation — isolation desaturates, connection saturates
+            lum = 0.299 * f32[..., 0] + 0.587 * f32[..., 1] + 0.114 * f32[..., 2]
+            lum3 = lum[..., np.newaxis]
+            f32 = np.clip(lum3 + sat_boost * (f32 - lum3), 0.0, 1.0)
+
+            # 4. Bloom — intensity drives glow strength
+            bright_mask = np.clip(f32 - (0.85 - bloom_intensity * 0.3), 0, 1) * (2.5 + bloom_intensity * 2.0)
+            from scipy.ndimage import uniform_filter
+            bloom_r = uniform_filter(bright_mask[..., 0], size=max(width // 24, 3))
+            bloom_g = uniform_filter(bright_mask[..., 1], size=max(width // 24, 3))
+            bloom_b = uniform_filter(bright_mask[..., 2], size=max(width // 24, 3))
+            bloom = np.stack([bloom_r, bloom_g, bloom_b], axis=-1)
+            f32 = np.clip(f32 + bloom * (0.3 + bloom_intensity * 0.5), 0.0, 1.0)
+
+            # 5. Vignette — isolation darkens edges more
+            vcx, vcy = width / 2.0, height / 2.0
+            vig_y, vig_x = np.mgrid[0:height, 0:width]
+            vig = 1.0 - vignette_str * np.clip(((vig_x - vcx) ** 2 + (vig_y - vcy) ** 2) / (vcx * vcy * 2.2), 0, 1)
+            f32 *= vig[..., np.newaxis]
+
+            # 6. Self-focus: brighten center region
+            if focal_weight > 0.02:
+                focus = np.exp(-0.5 * ((vig_x - vcx) ** 2 / (vcx * 0.6) ** 2 + (vig_y - vcy) ** 2 / (vcy * 0.6) ** 2))
+                f32 = np.clip(f32 + focus[..., np.newaxis] * focal_weight, 0.0, 1.0)
+
+            # 7. Subtle film grain
+            grain = np.random.normal(0, 0.012, f32.shape)
+            f32 = np.clip(f32 + grain, 0.0, 1.0)
+
+            frame = (f32 * 255.0).astype(np.uint8)
+            writer.append_data(frame)
+            
+        writer.close()
+
+        # Mux audio+video into single web-compatible MP4 (H264 + AAC, faststart)
+        final_path = self.output_dir / f"av_{timestamp}_final.mp4"
+        try:
+            import subprocess
+            result = subprocess.run([
+                "ffmpeg", "-y",
+                "-i", str(mp4_path),
+                "-i", str(wav_path),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart",
+                "-shortest",
+                str(final_path)
+            ], capture_output=True, text=True)
+            if result.returncode == 0:
+                mp4_path.unlink(missing_ok=True)
+                mp4_path = final_path
+            else:
+                print(f"[WARN] ffmpeg mux failed: {result.stderr[-300:]}")
+        except FileNotFoundError:
+            print("[WARN] ffmpeg not found — video and audio saved separately")
+
+        print(f"[SYSTEM] Audiovisual outputs saved to {self.output_dir}")
+        print(f"  Audio: {wav_path}")
+        print(f"  Video: {mp4_path}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Meaning-driven evolution under entropy pressure.")
     parser.add_argument("--text", type=str, default=None, help="Conceptual seed text.")
@@ -2172,6 +3169,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--frame-kick", type=float, default=0.18, help="Extra between-frame mutation force (0..1).")
     parser.add_argument("--seed", type=int, default=None, help="Fixed RNG seed. Same seed => same output.")
     parser.add_argument("--random-seed", action="store_true", help="Use a time-based seed for non-repeating output.")
+    
+    # Audiovisual arguments
+    parser.add_argument("--audiovisual", action="store_true", help="Generate a high-clarity audiovisual video scene.")
+    parser.add_argument("--av-width", type=int, default=640)
+    parser.add_argument("--av-duration", type=float, default=None, help="Clip length in seconds (default: full length)")
+    parser.add_argument("--av-height", type=int, default=480)
+    
     return parser.parse_args()
 
 
@@ -2191,6 +3195,14 @@ def main() -> None:
         ascii_mode=args.ascii_mode,
         contrast=max(-10, min(10, args.contrast)),
     )
+    
+    if args.audiovisual:
+        scores = system.analyzer.analyze(text)
+        scene_intent = parse_scene_intent(text)
+        av = AudiovisualGenerator(scores, output_dir=os.path.join(args.save_dir, "audiovisual"))
+        av.generate(text, width=args.av_width, height=args.av_height, intent=scene_intent, duration_sec=args.av_duration)
+        return
+
     chosen_seed = args.seed
     if args.random_seed and chosen_seed is None:
         chosen_seed = int(time.time_ns() % (2**31 - 1))
